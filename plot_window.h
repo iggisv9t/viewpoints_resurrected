@@ -257,6 +257,16 @@ class Plot_Window : public Fl_Gl_Window
 
     // openGL vertices of points to be plotted
     blitz::Array<float,2> vertices;
+    
+    // OpenGL buffer objects
+    GLuint vertex_buffer;  // Vertex buffer object for point data
+    GLuint index_buffers[NBRUSHES];  // Index buffers for each brush
+    
+    // Texture objects for sprites
+    static const int TEXSIZE = 64;  // Size of texture (width and height)
+    static GLuint texture_objects[NSYMBOLS];  // Texture objects for sprites
+    static GLuint sprite_textures[NSYMBOLS];  // Sprite texture names
+    int current_sprite;  // Currently active sprite (-1 if none)
 
     // indices of points when ranked according to their x, y, or z coordinate 
     // respectively

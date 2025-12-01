@@ -94,10 +94,20 @@ void Vp_Value_Input_Spin::draw()
   //int border_size=Fl::box_dx(FL_BORDER_FRAME);
   int border_size=1;
 
-  if (damage()&~FL_DAMAGE_CHILD) input.clear_damage(FL_DAMAGE_ALL);
+  if (damage() & ~FL_DAMAGE_CHILD) {
+    input.clear_damage(FL_DAMAGE_ALL);
+  }
+  
+  // Set the input's box and colors
   input.box(box());
   input.color(FL_WHITE, selection_color());
-  input.draw();
+  
+  // Use the public redraw() method to let FLTK handle the drawing
+  input.redraw();
+  
+  // Just draw our own box and let the input handle its own drawing
+  draw_box(box(), x(), y(), w(), h(), color());
+  
   input.clear_damage();
   sxx+=border_size;
   syy+=border_size;
@@ -108,11 +118,11 @@ void Vp_Value_Input_Spin::draw()
 
   if((indrag || mouseobj) && deltadir!=0) {
      if(deltadir>0) {
-       draw_box(down(box1),sxx,syy,sww,shh/2,color());
+       draw_box(FL_DOWN_BOX,sxx,syy,sww,shh/2,color());
        draw_box(box1,sxx,syy+shh/2,sww,shh/2,color());
      } else {
        draw_box(box1,sxx,syy,sww,shh/2,color());
-       draw_box(down(box1),sxx,syy+shh/2,sww,shh/2,color());
+       draw_box(FL_DOWN_BOX,sxx,syy+shh/2,sww,shh/2,color());
      }
   } else {
    draw_box(box1,sxx,syy,sww,shh/2,color());
@@ -154,7 +164,7 @@ void Vp_Value_Input_Spin::value_damage()
   char buf[128];
   format(buf);
   input.value(buf);
-  input.mark(input.position()); // turn off selection highlight
+  input.mark(input.insert_position()); // turn off selection highlight
 }
 
 //*****************************************************************************

@@ -22,6 +22,16 @@
 // Author: Creon Levit    2005-2006
 // Modified: P. R. Gazis  01-OCT-2008
 //***************************************************************************
+#include <string>
+#include <FL/Fl_Tabs.H>
+#include <FL/Fl_Button.H>
+#include <FL/Fl_Repeat_Button.H>
+#include <gsl/gsl_rng.h>
+#include <blitz/array.h>
+
+using std::string;
+using blitz::Array;
+using blitz::Range;
 
 #ifndef VP_GLOBAL_DEFINITIONS_VP_H
 #define VP_GLOBAL_DEFINITIONS_VP_H 1

@@ -292,8 +292,18 @@ int Data_File_Manager::load_data_file( string inFileSpec)
 //***************************************************************************
 // Data_File_Manager::load_data_file() -- Read an ASCII or binary data file, 
 // resize arrays to allocate meomory.  Returns 0 if successful.
-int Data_File_Manager::load_data_file() 
+int Data_File_Manager::load_data_file()
 {
+  fprintf(stderr, "DEBUG: Entering load_data_file()\n");
+  fprintf(stderr, "DEBUG: inputFileType_ = %d\n", inputFileType_);
+  fprintf(stderr, "DEBUG: inFileSpec = %s\n", inFileSpec.c_str());
+  
+  // Make sure we have a valid input file
+  if (inFileSpec.empty()) {
+    fprintf(stderr, "ERROR: No input file specified\n");
+    return 1;
+  }
+
   // PRG XXX: Would it be possible or desirable to examine the file directly 
   // here to determine or verify its format?
   if( inFileSpec.length() <= 0) {
@@ -818,7 +828,8 @@ int Data_File_Manager::remove_column_of_selection_info()
     column_info.erase( pTarget);
     nColumns = column_info.size();
     cout << " -Removed column[" << iTarget << "/" << nColumns
-         << "] with selection information" << endl;
+         << "]" << endl;
+    return nColumns;
   }
   return nColumns;
 }
@@ -830,8 +841,13 @@ int Data_File_Manager::remove_column_of_selection_info()
 // Step 5: Close the file.  Returns 0 if successful.
 int Data_File_Manager::read_ascii_file_with_headers() 
 {
-  istream* inStream;
-  ifstream inFile;
+  fprintf(stderr, "DEBUG: Entering read_ascii_file_with_headers()\n");
+  fprintf(stderr, "DEBUG: inFileSpec = %s\n", inFileSpec.c_str());
+  
+  // Open the input file
+  ifstream inFile(inFileSpec.c_str());
+  if (!inFile) {
+    fprintf(stderr, "ERROR: Could not open input file: %s\n", inFileSpec.c_str());
 
   // STEP 1: Either read from stdin, bypassing openning of input file, or
   // attempt to open input file and make sure it exists.
@@ -2806,6 +2822,16 @@ void Data_File_Manager::remove_trivial_columns()
 // arrays used store raw, sorted, and selected data.
 void Data_File_Manager::resize_global_arrays()
 {
+  fprintf(stderr, "DEBUG: Entering resize_global_arrays()\n");
+  fprintf(stderr, "DEBUG: nDataRows_ = %d, nDataColumns_ = %d\n", nDataRows_, nDataColumns_);
+  
+  if (nDataRows_ <= 0 || nDataColumns_ <= 0) {
+    fprintf(stderr, "ERROR: Invalid dimensions: nDataRows_=%d, nDataColumns_=%d\n", 
+            nDataRows_, nDataColumns_);
+    return;
+  }
+  
+  try {
   blitz::Range NPTS( 0, npoints-1);
   
   // If line numbers are to be included as another field (column) of data 

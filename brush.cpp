@@ -422,7 +422,7 @@ void Brush::build_symbol_menu()
     if( i < NSYMBOLS) {
       m->labeltype_ = FL_NORMAL_LABEL;
       m->labelsize_ = 14;
-      m->user_data_ = (void *)i;
+      m->user_data_ = reinterpret_cast<void*>(static_cast<intptr_t>(i));
     }
     else {
       m->labeltype_ = 0;

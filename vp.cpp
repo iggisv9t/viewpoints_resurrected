@@ -2218,6 +2218,12 @@ void reset_selection_arrays()
 // Main -- Driver routine
 int main( int argc, char **argv)
 {
+    // Initialize debug output
+    fprintf(stderr, "DEBUG: Starting Viewpoints application\n");
+    fprintf(stderr, "DEBUG: argc = %d\n", argc);
+    for (int i = 0; i < argc; i++) {
+        fprintf(stderr, "DEBUG: argv[%d] = %s\n", i, argv[i]);
+    }
   ostringstream fltk_version_ss;
   fltk_version_ss << Fl::version();
   

@@ -114,7 +114,6 @@
 // FLTK.  These includes should be handled by the relevant Dev-C++
 // 'dev-pak'.
 #include <FL/math.h>
-#include <FL/gl.h>
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Hor_Value_Slider.H>
@@ -125,7 +124,18 @@
 #include <FL/Fl_Menu_Button.H>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Choice.H>
+
+// Must include Fl_Gl_Window before GLEW
 #include <FL/Fl_Gl_Window.H>
+
+// Include GLEW before any OpenGL headers
+#include <GL/glew.h>
+
+// Now include the rest of FLTK's OpenGL headers
+#include <FL/gl.h>
+#include <FL/glu.h>
+
+// Other FLTK includes
 #include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_Repeat_Button.H>
 #include <FL/Fl_Check_Browser.H>
@@ -136,42 +146,16 @@
 #include <FL/Fl_Multiline_Output.H>
 #include <FL/Fl_Help_View.H>
 
-// flews widgets build on FLTK.  On the primary Windows system, these should 
-// be located in c:\devusr\flews as described above
-#include <FL/Fl_flews.h>
-#include <FL/Fl_Value_Slider_Input.H>
-
-// local vp modifications to flews widgets
-#include "Fl_Hor_Value_Slider_Input.H"  // modified flews slider
-#include "Vp_Value_Input_Spin.H" // modified flews spinner
+// Compatibility layer for FLEWS widgets
+#include "flews_compat.h"
 
 // Make provisions for PRG's new file chooser
 #include "Vp_File_Chooser.h"
 
-// OpenGL extensions.  NOTE: Some of these will clobber a Windows compile, so 
-// they must be excluded by the relevant defines!
-#ifdef __APPLE__
-  #include <OpenGL/glext.h>
-  #include <OpenGL/glu.h>
-#endif // __APPLE__
-#ifdef __linux__
-  #include <GL/glext.h>
-  #include <GL/glu.h>
-#endif // __linux__
-#ifdef __WIN32__
-  // OglExt.  Obtain from c:\devusr\oglext\include as described above and
-  // invoke as described in OGLEXT documentation
-  #define GL_GLEXT_PROTOTYPES
-  #include <glext.h>
-  #include <GL/glext.h>
-  #include <GL/glu.h>
-#endif // __WIN32__
+// Our OpenGL compatibility layer
+#include "gl_compat.h"
 
-// GSL (Must be included before Blitz++!)
-#ifdef __WIN32__
-  #include <C:\devusr\GnuWin32\include\config.h>
-  #include <winx/sys/timex.h>
-#endif // __WIN32__
+// GSL
 #include <gsl/gsl_sys.h>
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_cdf.h>

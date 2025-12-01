@@ -30,6 +30,8 @@
 #include "include_libraries_vp.h"
 
 // Include globals
+#include "gl_compat.h"
+#include <cstdint>
 #include "global_definitions_vp.h"
 
 // Include associated headers and source code
@@ -39,6 +41,22 @@
 #include "sprite_textures.h"
 #include "brush.h"
 #include "column_info.h"
+
+// Initialize static members
+int Plot_Window::count = 0;
+int Plot_Window::active_plot = 0;
+int Plot_Window::indexVBOsinitialized = 0;
+int Plot_Window::indexVBOsfilled = 0;
+int Plot_Window::sprites_initialized = 0;
+const float Plot_Window::initial_pscale = 0.9f;
+int Plot_Window::sfactor = GL_SRC_ALPHA;
+int Plot_Window::dfactor = GL_ONE_MINUS_SRC_ALPHA;
+GLuint Plot_Window::texture_objects[NSYMBOLS] = {0};
+GLuint Plot_Window::sprite_textures[NSYMBOLS] = {0};
+GLubyte* Plot_Window::spriteData[NSYMBOLS] = {nullptr};
+void* Plot_Window::global_GLContext = nullptr;
+blitz::Array<unsigned int, 2> Plot_Window::indices_selected(NBRUSHES, 1);
+GLuint Plot_Window::spriteTextureID[NSYMBOLS] = {0};
 
 // experimental
 #define ALPHA_TEXTURE
@@ -54,27 +72,6 @@
             abort();                           \
         }                                      \
     }
-
-// initialize static data members for class Plot_Window::
-
-// Initial number of plot windows
-int Plot_Window::count = 0;
-
-// Initial fraction of the window to be used for showing (normalized) data
-float const Plot_Window::initial_pscale = 0.8; 
-
-//GLfloat Plot_Window::texenvcolor[ 4] = { 1, 1, 1, 1};
-
-// 2D array that holds indices of vertices for each brush
-blitz::Array<unsigned int,2> Plot_Window::indices_selected(NBRUSHES,1); 
-
-GLuint Plot_Window::spriteTextureID[NSYMBOLS];
-GLubyte* Plot_Window::spriteData[NSYMBOLS];
-int Plot_Window::sprites_initialized = 0;
-
-void *Plot_Window::global_GLContext = NULL;
-int Plot_Window::indexVBOsinitialized = 0;
-int Plot_Window::indexVBOsfilled = 0;
 #define BUFFER_OFFSET(vbo_offset) ((char *)NULL + (vbo_offset))
 
 // Declarations for global methods defined and used by class Plot_Window.
@@ -1160,7 +1157,8 @@ void Plot_Window::print_selection_stats ()
   // LR-centered, upper 95th percentile of the window
   snprintf( buf1, sizeof(buf1), "%8d (%5.2f%%) selected", nselected, 100.0*nselected/(float)npoints);
   gl_font( FL_HELVETICA_BOLD, 11);
-  glWindowPos2i( (w()-(int)gl_width(buf1))/2, 95*h()/100);
+  // Use glRasterPos2i as a fallback for glWindowPos2i
+  glRasterPos2i((w()-(int)gl_width(buf1))/2, 95*h()/100);
   gl_draw( (const char *) buf1);
 
   gl_font( FL_HELVETICA, 10);
@@ -1345,20 +1343,34 @@ void Plot_Window::draw_data_points()
     }
   }
 
-  // Tell the GPU where to find the vertices for this plot.
-  if (use_VBOs) {
-    // bind VBO for vertex data
-    glBindBuffer(GL_ARRAY_BUFFER, index+1);
-
-    // If the variables we are plotting were changed, then the vertex VBO must 
-    // be updated to contain the correct vertex data, and it has to be done 
-    // here, where the correct window and context are active.
-    if (!VBOfilled) fill_VBO();
-
-    glVertexPointer (3, GL_FLOAT, 0, BUFFER_OFFSET(0));
+  // Initialize GLEW if needed
+  if (!init_glew()) {
+    fprintf(stderr, "Warning: GLEW initialization failed. Cannot draw data points.\n");
+    return;
   }
-  else {
-    glVertexPointer (3, GL_FLOAT, 0, (GLfloat *)vertices.data()); 
+
+  // Enable vertex array client state
+  glEnableClientState(GL_VERTEX_ARRAY);
+  
+  // Tell the GPU where to find the vertices for this plot.
+  if (use_VBOs && VBOinitialized) {
+    // bind VBO for vertex data
+    if (glBindBuffer) {
+      glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+      
+      // If the variables we are plotting were changed, then the vertex VBO must 
+      // be updated to contain the correct vertex data, and it has to be done 
+      // here, where the correct window and context are active.
+      if (!VBOfilled) fill_VBO();
+      
+      glVertexPointer(3, GL_FLOAT, 0, BUFFER_OFFSET(0));
+    } else {
+      // Fallback to client-side arrays if VBO functions aren't available
+      glVertexPointer(3, GL_FLOAT, 0, (GLfloat *)vertices.data());
+    }
+  } else {
+    // Not using VBOs, use client-side arrays
+    glVertexPointer(3, GL_FLOAT, 0, (GLfloat *)vertices.data()); 
   }
 
   // set the blending mode for this plot
@@ -1369,7 +1381,8 @@ void Plot_Window::draw_data_points()
       break;
     
     case Control_Panel_Window::BLEND_OVERPLOT_WITH_ALPHA:
-      glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,GL_SRC_ALPHA,GL_ONE_MINUS_DST_COLOR);
+      // Use standard blending if separate blending is not available
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       break;
     
     case Control_Panel_Window::BLEND_BRUSHES_SEPARATELY:
@@ -1475,18 +1488,45 @@ void Plot_Window::draw_data_points()
       glColor4d(r,g,b,a);
 
       // then render the points
-      if (use_VBOs) {
-        assert (VBOinitialized && VBOfilled && indexVBOsinitialized && indexVBOsfilled) ;
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, MAXPLOTS+1+brush_index); 
-        glDrawElements( element_mode, (GLsizei)count, GL_UNSIGNED_INT, BUFFER_OFFSET(0)); // would it bee faster to use glDrawRangeElements() ?
-        // make sure we succeeded 
-        CHECK_GL_ERROR("drawing points from VBO");
-      }
-      else {
-        // Create an alias to slice
+      if (use_VBOs && VBOinitialized && indexVBOsinitialized && indexVBOsfilled && 
+          glBindBuffer && glDrawElements) {
+        // Make sure we have valid VBO functions
+        if (glGenBuffers && glBindBuffer && glBufferData && glBufferSubData) {
+          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffers[brush_index]); 
+          glDrawElements(element_mode, (GLsizei)count, GL_UNSIGNED_INT, BUFFER_OFFSET(0));
+          // make sure we succeeded 
+          CHECK_GL_ERROR("drawing points from VBO");
+        } else {
+          // If VBO functions aren't available, disable VBOs and fall back to client-side arrays
+          use_VBOs = 0;
+          VBOinitialized = 0;
+          indexVBOsinitialized = 0;
+          indexVBOsfilled = 0;
+          
+          // Fall through to client-side array rendering
+          blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,npoints-1));
+          unsigned int *indices = (unsigned int *)(tmpArray.data());
+          
+          if (element_mode == GL_POINTS) {
+            glDrawArrays(element_mode, 0, count);
+          } else {
+            glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
+          }
+        }
+      } else {
+        // Fallback to client-side arrays if VBOs aren't available or not fully initialized
         blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,npoints-1));
-        unsigned int *indices = (unsigned int *) (tmpArray.data());
-        glDrawRangeElements( element_mode, 0, npoints, count, GL_UNSIGNED_INT, indices);
+        unsigned int *indices = (unsigned int *)(tmpArray.data());
+        
+        // Use glDrawArrays if we can't use VBOs
+        if (element_mode == GL_POINTS) {
+          // For points, we can use glDrawArrays with the vertex array
+          glDrawArrays(element_mode, 0, count);
+        } else {
+          // For other modes (like line strips), we need to use glDrawElements
+          // with client-side indices
+          glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
+        }
       }
     }
   }
@@ -1506,6 +1546,15 @@ void Plot_Window::draw_data_points()
 #ifdef ALPHA_TEXTURE
   glDisable(GL_ALPHA_TEST);
 #endif // ALPHA_TEXTURE
+  
+  // Clean up OpenGL state
+  glDisableClientState(GL_VERTEX_ARRAY);
+  
+  // Unbind any bound buffers to avoid side effects
+  if (glBindBuffer) {
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  }
 }
 
 //***************************************************************************
@@ -2513,86 +2562,201 @@ void Plot_Window::make_sprite_textures()
 // member function make_sprite_textures to initialize sprites
 void Plot_Window::initialize_sprites()
 {
-  glEnable( GL_TEXTURE_2D);
-  glGenTextures( NSYMBOLS, spriteTextureID);
-  make_sprite_textures();
-  for (int i=0; i<NSYMBOLS; i++) {
-#ifdef ALPHA_TEXTURE
-    GLfloat rgb2rgba[16] = {
-      1, 0, 0, 1/3.0,
-      0, 1, 0, 1/3.0,
-      0, 0, 1, 1/3.0,
-      0, 0, 0, 0
-    };
-    glMatrixMode(GL_COLOR);
-    glLoadMatrixf(rgb2rgba);
-    glMatrixMode(GL_MODELVIEW);
-    glBindTexture( GL_TEXTURE_2D, spriteTextureID[i]);
-    gluBuild2DMipmaps( GL_TEXTURE_2D, GL_INTENSITY, spriteWidth, spriteHeight, GL_RGB, GL_UNSIGNED_BYTE, spriteData[i]);
-#else // ALPHA_TEXTURE
-    glBindTexture( GL_TEXTURE_2D, spriteTextureID[i]);
-    gluBuild2DMipmaps( GL_TEXTURE_2D, GL_LUMINANCE_ALPHA, spriteWidth, spriteHeight, GL_RGB, GL_UNSIGNED_BYTE, spriteData[i]);
-#endif // ALPHA_TEXTURE
-    CHECK_GL_ERROR( "initializing sprite texture mipmaps");
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    CHECK_GL_ERROR( "initializing sprite texture parameters");
-  }
-  sprites_initialized = 1;
-  cout << "Textures initialized!" << endl;
-  glDisable( GL_TEXTURE_2D);
+    if (sprites_initialized) return;
+
+    // Make sure GLEW is initialized
+    if (!init_glew()) {
+        fprintf(stderr, "Warning: GLEW initialization failed. Point sprites disabled.\n");
+        sprites_initialized = 0;
+        return;
+    }
+
+    // Check if we have the required OpenGL functions
+    if (GLEW_VERSION_1_1) {  // Basic texture functions are in OpenGL 1.1
+        // Generate texture objects
+        glGenTextures(NSYMBOLS, texture_objects);
+        
+        // Set up texture parameters for each sprite
+        for (int i = 0; i < NSYMBOLS; i++) {
+            glBindTexture(GL_TEXTURE_2D, texture_objects[i]);
+            
+            // Set texture parameters
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            
+            // Load texture data
+            if (spriteData[i] != nullptr) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, TEXSIZE, TEXSIZE, 0,
+                            GL_ALPHA, GL_UNSIGNED_BYTE, spriteData[i]);
+            } else {
+                fprintf(stderr, "Warning: No texture data for sprite %d\n", i);
+                // Create an empty texture to avoid errors
+                std::vector<GLubyte> emptyData(TEXSIZE * TEXSIZE, 0);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, TEXSIZE, TEXSIZE, 0,
+                            GL_ALPHA, GL_UNSIGNED_BYTE, emptyData.data());
+            }
+        }
+        
+        // Unbind the texture
+        glBindTexture(GL_TEXTURE_2D, 0);
+        
+        sprites_initialized = 1;
+    } else {
+        fprintf(stderr, "Warning: OpenGL 1.1 or later required for textures. Point sprites disabled.\n");
+        sprites_initialized = 0;
+    }
+    
+    // Disable texturing by default
+    glDisable(GL_TEXTURE_2D);
+    CHECK_GL_ERROR("initializing sprites");
 }
     
 //***************************************************************************
 // Plot_Window::enable_sprites() -- Invoke OpenGL routines to enable sprites
 void Plot_Window::enable_sprites(int sprite)
 {
-  glDisable( GL_POINT_SMOOTH);
-  if (!sprites_initialized)
-    initialize_sprites();
-  glEnable( GL_TEXTURE_2D);
-  glEnable( GL_POINT_SPRITE);
-  assert ((sprite >= 0) && (sprite < NSYMBOLS));
-  glBindTexture( GL_TEXTURE_2D, spriteTextureID[sprite]);
-  glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-  glTexEnvf( GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE );
-}
+    if (sprite == current_sprite) return;
 
-//***************************************************************************
-// Plot_Window::clear_alpha_planes() -- Those filthy alpha planes!  It seems 
-// that no matter how hard you try, you just can't keep them clean!
-void Plot_Window::clear_alpha_planes()
-{
-  glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
-  glClearColor( 0.0, 0.0, 0.0, 0.0);
-  glClear( GL_COLOR_BUFFER_BIT);
-  glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-}
+    // Make sure GLEW is initialized
+    if (!init_glew()) {
+        fprintf(stderr, "Warning: GLEW initialization failed. Cannot enable sprites.\n");
+        return;
+    }
 
-//***************************************************************************
-// Plot_Window::clear_stencil_buffer() -- Clear the stencil buffer
-void Plot_Window::clear_stencil_buffer()
-{
-#if 0
-  // XXX HAH!  Here's the bug:  Plot 0 has 8 stencil bits.  The others have none!
-  GLint sbits = 0;
-  glGetIntegerv(GL_STENCIL_BITS, &sbits );
-  cout << "clearing (" << sbits << " bit) stencil buffer for plot " << index << endl;
-#endif
-  glClearStencil((GLint)0);
-  glClear(GL_STENCIL_BUFFER_BIT);
+    if (current_sprite >= 0) {
+        disable_sprites();
+    }
+
+    // Enable point sprites if supported
+    #ifdef GL_POINT_SPRITE
+    if (GLEW_VERSION_2_0 || GLEW_ARB_point_sprite) {
+        glEnable(GL_POINT_SPRITE);
+        glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
+        current_sprite = sprite;
+    } else {
+        // If we can't enable sprites, fall back to regular points
+        current_sprite = -1;
+    }
+    #else
+        current_sprite = -1;
+    #endif
 }
 
 //***************************************************************************
 // Plot_Window::disable_sprites() -- Invoke OpenGL routines to disable sprites
 void Plot_Window::disable_sprites()
 {
-  glDisable( GL_TEXTURE_2D);
-  glDisable( GL_POINT_SPRITE);
+    // Make sure GLEW is initialized
+    if (!init_glew()) {
+        fprintf(stderr, "Warning: GLEW initialization failed. Cannot disable sprites.\n");
+        return;
+    }
+
+    if (current_sprite >= 0) {
+        if (GLEW_VERSION_1_1) {
+            #ifdef GL_POINT_SPRITE
+            if (GLEW_ARB_point_sprite) {
+                glDisable(GL_POINT_SPRITE);
+            }
+            #endif
+            glDisable(GL_TEXTURE_2D);
+            glDisable(GL_BLEND);
+        }
+        current_sprite = -1;
+    }
 }
 
+//***************************************************************************
+// Plot_Window::clear_alpha_planes() -- Clear the alpha channel of the color buffer
+void Plot_Window::clear_alpha_planes()
+{
+  // Make sure GLEW is initialized
+  if (!init_glew()) {
+    fprintf(stderr, "Warning: GLEW initialization failed. Cannot clear alpha planes.\n");
+    return;
+  }
+
+  // Check if we have the required OpenGL version
+  if (!GLEW_VERSION_1_1) {
+    fprintf(stderr, "Warning: OpenGL 1.1 or later required for clearing alpha planes.\n");
+    return;
+  }
+
+  // Set up the viewport and projection for a full window clear
+  glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0, w(), 0, h(), -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  // Disable depth testing and blending
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+
+  // Set the clear color with alpha = 0
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  
+  // Clear only the alpha channel
+  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+  glClear(GL_COLOR_BUFFER_BIT);
+  
+  // Restore the color mask
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+  // Restore the matrices and attributes
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+  glPopAttrib();
+}
+
+//***************************************************************************
+// Plot_Window::clear_stencil_buffer() -- Clear the stencil buffer
+void Plot_Window::clear_stencil_buffer()
+{
+  // Make sure GLEW is initialized
+  if (!init_glew()) {
+    fprintf(stderr, "Warning: GLEW initialization failed. Cannot clear stencil buffer.\n");
+    return;
+  }
+
+  // Check if we have the required OpenGL version
+  if (!GLEW_VERSION_1_1) {
+    fprintf(stderr, "Warning: OpenGL 1.1 or later required for stencil operations.\n");
+    return;
+  }
+
+  // Set up the viewport and projection for a full window clear
+  glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT | GL_STENCIL_BUFFER_BIT);
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0, w(), 0, h(), -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  // Disable depth testing and blending
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+
+  // Clear the stencil buffer
+  glClearStencil(0);
+  glClear(GL_STENCIL_BUFFER_BIT);
+
+  // Restore the matrices and attributes
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+  glPopAttrib();
+}
 
 //***************************************************************************
 // Define methods to use vertex buffer objects (VBOs)
@@ -2601,57 +2765,102 @@ void Plot_Window::disable_sprites()
 // Plot_Window::initialize_VBO() -- Initialize VBO for this window
 void Plot_Window::initialize_VBO()
 {
-  // Create a VBO. Index 0 is reserved.
-  if (!VBOinitialized) {
-    glBindBuffer(GL_ARRAY_BUFFER, index+1);  
-    CHECK_GL_ERROR ("creating VBO");
-
-    // Reserve enough space in openGL server memory VBO to hold all the 
-    // vertices, but do not initilize it.
-    glBufferData( GL_ARRAY_BUFFER, (GLsizeiptr) npoints*3*sizeof(GLfloat), (void *)NULL, GL_DYNAMIC_DRAW);
-
-    // Make sure we succeeded 
-    CHECK_GL_ERROR ("initializing VBO");
-    cerr << " initialized VBO for plot window " << index << endl;
+  if (VBOinitialized) return;
+  
+  // Make sure GLEW is initialized
+  if (!init_glew()) {
+    fprintf(stderr, "Warning: GLEW initialization failed. Cannot initialize VBO.\n");
+    VBOinitialized = 0;
+    VBOfilled = 0;
+    use_VBOs = 0;
+    return;
+  }
+  
+  // Check if VBO functions are available through GLEW
+  if (GLEW_VERSION_1_5 || GLEW_ARB_vertex_buffer_object) {
+    // Generate buffer for vertex data
+    glGenBuffers(1, &vertex_buffer);
+    CHECK_GL_ERROR("generating vertex buffer object");
+    
+    // Bind and initialize the vertex buffer
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float) * 3, NULL, GL_DYNAMIC_DRAW);
+    
+    // Unbind the buffer
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
     VBOinitialized = 1;
+    VBOfilled = 0;
+  } else {
+    // Fallback to client-side arrays if VBOs aren't supported
+    VBOinitialized = 0;
+    VBOfilled = 0;
+    use_VBOs = 0; // Disable VBO usage
   }
 }
- 
+
 //***************************************************************************
 // Plot_Window::fill_VBO() -- Fill the VBO for this window
 void Plot_Window::fill_VBO()
 {
-  if (!VBOfilled) {
-    glBindBuffer(GL_ARRAY_BUFFER, index+1);  
-    void *vertexp = (void *)vertices.data();
-    glBufferSubData( GL_ARRAY_BUFFER, (GLintptr) 0, (GLsizeiptr) (npoints*3*sizeof(GLfloat)), vertexp);
-    CHECK_GL_ERROR("filling VBO");
-    VBOfilled = true;
+  if (!VBOinitialized || VBOfilled) return;
+  
+  // Make sure we have the required functions
+  if (glBindBuffer && glBufferSubData) {
+    // Bind the vertex buffer
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    
+    // Fill the buffer with vertex data
+    glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float) * 3, vertices.data());
+    
+    // Unbind the buffer
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+    VBOfilled = 1;
+  } else {
+    // If VBO functions aren't available, disable VBOs
+    VBOinitialized = 0;
+    VBOfilled = 0;
+    use_VBOs = 0;
   }
 }
 
 //***************************************************************************
 // Plot_Window::initialize_indexVBO() -- Initialize the 'index VBO' that
 // holds indices of selected (or non-selected) points.
-// MCL XXX index VBOs hould probably be handled by the Brush class.
+// MCL XXX index VBOs should probably be handled by the Brush class.
 void Plot_Window::initialize_indexVBO(int set)
 {
-  // There is one shared set of index VBOs for all plots.
-  //  indexVBO bound to MAXPLOTS+1 holds indices of nonselected (brushes[0]) points
-  //  indexVBO bound to MAXPLOTS+2 holds indices of points selected by brushes[1], etc.
-  glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, MAXPLOTS+set+1);  // a safe place....
-  glBufferData( GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr) (npoints*sizeof(GLuint)), (void*) NULL, GL_DYNAMIC_DRAW);
-}
-
-//***************************************************************************
-// Plot_Window::initialize_indexVBOs() -- Initialize set of index VBOs
-void Plot_Window::initialize_indexVBOs() 
-{
-  if (!indexVBOsinitialized) {
-    for (int set=0; set<NBRUSHES; set++) {
-      initialize_indexVBO(set);
-    }
+  if (indexVBOsinitialized) return;
+  
+  // Make sure GLEW is initialized
+  if (!init_glew()) {
+    fprintf(stderr, "Warning: GLEW initialization failed. Cannot initialize index VBO.\n");
+    indexVBOsinitialized = 0;
+    indexVBOsfilled = 0;
+    return;
+  }
+  
+  // Check if VBO functions are available through GLEW
+  if (GLEW_VERSION_1_5 || GLEW_ARB_vertex_buffer_object) {
+    // Generate buffer for index data
+    glGenBuffers(1, &index_buffers[set]);
+    CHECK_GL_ERROR("generating index buffer object");
+    
+    // Bind and initialize the index buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffers[set]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, npoints * sizeof(unsigned int), NULL, GL_DYNAMIC_DRAW);
+    
+    // Unbind the buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    
     indexVBOsinitialized = 1;
+    indexVBOsfilled = 0;
+  } else {
+    // Fallback to client-side arrays if VBOs aren't supported
+    indexVBOsinitialized = 0;
+    indexVBOsfilled = 0;
+    use_VBOs = 0; // Disable VBO usage
   }
 }
 
@@ -2659,29 +2868,74 @@ void Plot_Window::initialize_indexVBOs()
 // Plot_Window::fill_indexVBO() -- Fill the index VBO
 void Plot_Window::fill_indexVBO(int set)
 {
-  if (brushes[set]->count > 0) {
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, MAXPLOTS+set+1);
-    // Create an alias to slice
-    blitz::Array<unsigned int, 1> tmpArray = indices_selected( set, blitz::Range(0,npoints-1));
-    unsigned int *indices = (unsigned int *) (tmpArray.data());
-    glBufferSubData( GL_ELEMENT_ARRAY_BUFFER, (GLintptr) 0, (GLsizeiptr) (brushes[set]->count*sizeof(GLuint)), indices);
-    // make sure we succeeded 
-    CHECK_GL_ERROR("filling index VBO");
+  if (!indexVBOsinitialized || indexVBOsfilled) return;
+  
+  // Make sure we have the required functions
+  if (glBindBuffer && glBufferSubData) {
+    // Get the indices for the current brush
+    blitz::Array<unsigned int, 1> tmpArray = indices_selected(set, blitz::Range(0, npoints-1));
+    unsigned int *indices = (unsigned int *)(tmpArray.data());
+    
+    // Bind the index buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffers[set]);
+    
+    // Fill the buffer with index data
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, npoints * sizeof(unsigned int), indices);
+    
+    // Unbind the buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    
+    indexVBOsfilled = 1;
+  } else {
+    // If VBO functions aren't available, disable VBOs
+    indexVBOsinitialized = 0;
+    indexVBOsfilled = 0;
+    use_VBOs = 0;
   }
 }
 
 //***************************************************************************
 // Plot_Window::fill_indexVBOs() -- Fill all the index VBOs
-void Plot_Window::fill_indexVBOs() 
+void Plot_Window::fill_indexVBOs()
 {
+  if (!indexVBOsinitialized) {
+    for (int set=0; set<NBRUSHES; set++) {
+      initialize_indexVBO(set);
+    }
+  }
+  
   if (!indexVBOsfilled) {
     for (int set=0; set<NBRUSHES; set++) {
       fill_indexVBO(set);
     }
-    indexVBOsfilled = 1;
   }
 }
 
+//***************************************************************************
+// Plot_Window::initialize_indexVBOs() -- Initialize all index VBOs
+// This function initializes index VBOs for all brush sets
+void Plot_Window::initialize_indexVBOs()
+{
+    if (indexVBOsinitialized) return;
+    
+    // Make sure GLEW is initialized
+    if (!init_glew()) {
+        fprintf(stderr, "Warning: GLEW initialization failed. Cannot initialize index VBOs.\n");
+        return;
+    }
+    
+    // Check if we have the required OpenGL functions
+    if (GLEW_VERSION_1_5 || GLEW_ARB_vertex_buffer_object) {
+        // Initialize index VBOs for each brush set
+        for (int i = 0; i < NBRUSHES; i++) {
+            initialize_indexVBO(i);
+        }
+        indexVBOsinitialized = 1;
+    } else {
+        fprintf(stderr, "Warning: OpenGL 1.5 or ARB_vertex_buffer_object extension not available.\n");
+        indexVBOsinitialized = 0;
+    }
+}
 
 //***************************************************************************
 // Define global methods.  NOTE: Is it a good idea to do this here rather 

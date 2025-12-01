@@ -396,7 +396,7 @@ void Control_Panel_Window::make_widgets( Control_Panel_Window *cpw)
     //      << " = " << (column_info[i].label).c_str() << endl;
     // varindex_menu_items[i].label((const char *) ((column_info[i].label).c_str()));
     varindex_menu_items[i].label( (const char *) (pdfm->column_label(i)).c_str());
-    varindex_menu_items[i].user_data((void *)i);
+    varindex_menu_items[i].user_data(reinterpret_cast<void*>(static_cast<intptr_t>(i)));
   }
   varindex_menu_items[nvars+1].label(0);
 
@@ -520,7 +520,7 @@ void Control_Panel_Window::make_widgets( Control_Panel_Window *cpw)
   // create three bin count sliders, one for each axis.
   for (int i=0; i<3; i++) {
     nbins_slider[i] = new Fl_Hor_Value_Slider_Input(xpos+i*subwidth, ypos, subwidth-15, 20);
-    nbins_slider[i]->textboxsize(30);
+    nbins_slider[i]->textsize(12);
     nbins_slider[i]->callback((Fl_Callback*)redraw_one_plot, this);
     nbins_slider[i]->range(0.0,log2((double)Plot_Window::nbins_max));
     // nbins_slider[i]->precision(0);
@@ -541,7 +541,7 @@ void Control_Panel_Window::make_widgets( Control_Panel_Window *cpw)
   // create three bin height sliders, one for each axis.
   for (int i=0; i<3; i++) {
     hscale_slider[i] = new Fl_Hor_Value_Slider_Input(xpos+i*subwidth, ypos, subwidth-15, 20);
-    hscale_slider[i]->textboxsize(30);
+    hscale_slider[i]->textsize(12);
     hscale_slider[i]->callback((Fl_Callback*)redraw_one_plot, this);
     hscale_slider[i]->range(0.0,10.0);
     hscale_slider[i]->value(1.0);
