@@ -16,3 +16,5 @@ vp
 *.lai
 *.la
 *.a
+
+build/*
