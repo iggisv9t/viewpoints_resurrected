@@ -843,11 +843,18 @@ int Data_File_Manager::read_ascii_file_with_headers()
 {
   fprintf(stderr, "DEBUG: Entering read_ascii_file_with_headers()\n");
   fprintf(stderr, "DEBUG: inFileSpec = %s\n", inFileSpec.c_str());
+
+    // Declare the input stream
+    istream* inStream = nullptr;
+    ifstream inFile;
   
   // Open the input file
-  ifstream inFile(inFileSpec.c_str());
-  if (!inFile) {
-    fprintf(stderr, "ERROR: Could not open input file: %s\n", inFileSpec.c_str());
+  // ifstream inFile(inFileSpec.c_str());
+  // if (!inFile) {
+  //   fprintf(stderr, "ERROR: Could not open input file: %s\n", inFileSpec.c_str());
+  //   return 1;
+  // }
+  
 
   // STEP 1: Either read from stdin, bypassing openning of input file, or
   // attempt to open input file and make sure it exists.
@@ -2822,16 +2829,6 @@ void Data_File_Manager::remove_trivial_columns()
 // arrays used store raw, sorted, and selected data.
 void Data_File_Manager::resize_global_arrays()
 {
-  fprintf(stderr, "DEBUG: Entering resize_global_arrays()\n");
-  fprintf(stderr, "DEBUG: nDataRows_ = %d, nDataColumns_ = %d\n", nDataRows_, nDataColumns_);
-  
-  if (nDataRows_ <= 0 || nDataColumns_ <= 0) {
-    fprintf(stderr, "ERROR: Invalid dimensions: nDataRows_=%d, nDataColumns_=%d\n", 
-            nDataRows_, nDataColumns_);
-    return;
-  }
-  
-  try {
   blitz::Range NPTS( 0, npoints-1);
   
   // If line numbers are to be included as another field (column) of data 
