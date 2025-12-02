@@ -306,9 +306,9 @@ int Plot_Window::handle( int event)
 {
   // Current plot window (button pushes, mouse drags, etc) must get redrawn 
   // before others so that selections get colored correctly.  Ugh.
+  active_plot = index;
+  
   switch( event) {
-    active_plot = index;
-
     // Mouse button push
     case FL_PUSH:
       DEBUG(cout << "FL_PUSH at " << xprev << ", " << yprev << endl);

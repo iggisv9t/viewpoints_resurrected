@@ -2635,36 +2635,32 @@ int main( int argc, char **argv)
   }
   
   // Make sure the main window is shown
-  main_control_panel->show();
-  
-  // Process any pending events to ensure the window is displayed
-  Fl::check();
-  Fl::wait(0.1);
-  
-  // Force redraw of all windows
-  Fl::redraw();
-  
-  // Make sure all windows are visible
-  for (int i = 0; i < nplots; i++) {
-    if (pws[i] && pws[i]->shown() == 0) {
-      pws[i]->show();
-    }
+  if (main_control_panel) {
+    main_control_panel->show();
+    // Process any pending events to ensure the window is displayed
+    Fl::check();
+    Fl::wait(0.1);
+  } else {
+    cerr << "Error: Failed to create main control panel window" << endl;
+    return -1;
   }
-  
-  // Process any pending events again
-  Fl::check();
-  Fl::wait(0.1);
   
   // Show all plot windows
+  bool any_plots = false;
   for (int i = 0; i < nplots; i++) {
-    if (pws[i] && pws[i]->shown() == 0) {
+    if (pws[i]) {
       pws[i]->show();
+      any_plots = true;
     }
   }
   
-  // Process any pending events to ensure windows are shown
+  if (!any_plots) {
+    cerr << "Warning: No plot windows were created" << endl;
+  }
+  
+  // Force initial redraw of all windows
   Fl::check();
-  Fl::wait(0.1);
+  Fl::redraw();
   
   // Enter the standard FLTK event loop
   int result = Fl::run();
