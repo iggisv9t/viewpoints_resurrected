@@ -2604,9 +2604,6 @@ int main( int argc, char **argv)
   if( dfm.read_selection_info() != 1)
     Plot_Window::initialize_selection();
 
-  // Now we can show the main control panel and all its subpanels
-  main_control_panel->show();
-
   // This should be moved to create_main_control_panel?
   main_scroll->add( main_scroll_group);
   main_scroll_group->resizable( NULL);
@@ -2616,19 +2613,22 @@ int main( int argc, char **argv)
   laptop_main_h = (int) (laptop_scale*main_h);
   if( laptop_mode) change_screen_mode();
   
-  // Step 5: Register functions to call on a reglar basis, when no other
+  // Step 5: Register functions to call on a regular basis, when no other
   // events (mouse, etc.) are waiting to be processed.
-  // Do not use Fl::add_idle().  It causes causes a busy-wait loop.
-  // use Fl:add_timeout() instead.
   Fl::add_timeout( 0.01, redraw_if_changing);
-
-  // For some reason, add_timout doesn't seem to work.  But add_check 
-  // seems to avoid the problem with the busy-wait loop
-  // Fl::add_timeout(0.25, cb_manage_plot_window_array);
   Fl::add_check( cb_manage_plot_window_array);
 
   // Load initial configuration if one was specified
-  if( configFileSpec.length() > 0) load_initial_state( configFileSpec);
+  if( configFileSpec.length() > 0) {
+    load_initial_state( configFileSpec);
+  }
+  
+  // Make sure the main window is shown
+  main_control_panel->show();
+  
+  // Process any pending events to ensure the window is displayed
+  Fl::check();
+  Fl::wait(0.1);
 
   // Enter the main event loop
   int result = Fl::run();
