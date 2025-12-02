@@ -86,6 +86,17 @@
 #include "include_libraries_vp.h"
 #include <FL/Fl_Tooltip.H>
 #include <FL/Fl_Scroll.H>
+#include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Text_Display.H>
+#include <FL/Fl_Value_Input.H>
+#include <FL/Fl_Window.H>
+#include <FL/fl_ask.H>
+#include <FL/fl_draw.H>
+#include <FL/gl.h>
+#include <FL/glu.h>
+#include <FL/names.h>
+#include <FL/Fl_Help_View.H>
+#include <cstdint>
 
 // define and initialize globals
 #define DEFINE_GLOBALS
@@ -1409,9 +1420,9 @@ void make_help_view_window( Fl_Widget *o)
   int help_height = help_view_widget->h();
   help_height = 3*help_height/4;
   Fl_Button* back = new Fl_Button( 325, 465, 70, 25, "&Back");
-  back->callback( (Fl_Callback*) step_help_view_widget, (void*) -help_height);
+  back->callback((Fl_Callback*)step_help_view_widget, (void*)(intptr_t)(-help_height));
   Fl_Button* fwd = new Fl_Button( 400, 465, 70, 25, "&Fwd");
-  fwd->callback( (Fl_Callback*) step_help_view_widget, (void*) help_height);
+  fwd->callback((Fl_Callback*)step_help_view_widget, (void*)(intptr_t)help_height);
 
   // Invoke callback function to close window
   Fl_Button* close = new Fl_Button( 500, 465, 70, 25, "&Close");
@@ -1445,11 +1456,11 @@ void close_help_window( Fl_Widget *o, void* user_data)
 //***************************************************************************
 // step_help_view_window( *o, *user_data) -- Step through the 'Help|Help' 
 // window.
-void step_help_view_widget( Fl_Widget *o, void* user_data)
+void step_help_view_widget(Fl_Widget *o, void* user_data)
 {
-  help_topline += (long) user_data;
-  if( help_topline < 0) help_topline=0;
-  help_view_widget->topline( help_topline);
+  help_topline += (int)(intptr_t)user_data;
+  if (help_topline < 0) help_topline = 0;
+  help_view_widget->topline(help_topline);
 }
 
 //***************************************************************************
@@ -2629,8 +2640,33 @@ int main( int argc, char **argv)
   // Process any pending events to ensure the window is displayed
   Fl::check();
   Fl::wait(0.1);
-
-  // Enter the main event loop
+  
+  // Force redraw of all windows
+  Fl::redraw();
+  
+  // Make sure all windows are visible
+  for (int i = 0; i < nplots; i++) {
+    if (pws[i] && pws[i]->shown() == 0) {
+      pws[i]->show();
+    }
+  }
+  
+  // Process any pending events again
+  Fl::check();
+  Fl::wait(0.1);
+  
+  // Show all plot windows
+  for (int i = 0; i < nplots; i++) {
+    if (pws[i] && pws[i]->shown() == 0) {
+      pws[i]->show();
+    }
+  }
+  
+  // Process any pending events to ensure windows are shown
+  Fl::check();
+  Fl::wait(0.1);
+  
+  // Enter the standard FLTK event loop
   int result = Fl::run();
 
   // Free the gsl random number generator
