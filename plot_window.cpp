@@ -1325,6 +1325,13 @@ void Plot_Window::draw_selection_information()
 void Plot_Window::draw_data_points()
 {
   // cout << "pw[" << index << "]: draw_data_points() " << endl;
+  // Temporary workaround - disable VBOs
+  static bool vbo_initialized = false;
+  if (!vbo_initialized) {
+      use_VBOs = 0;
+      vbo_initialized = true;
+      fprintf(stderr, "VBOs temporarily disabled due to rendering issues\n");
+  }
   if ( !cp->show_points->value())return;
 
 #ifdef ALPHA_TEXTURE
