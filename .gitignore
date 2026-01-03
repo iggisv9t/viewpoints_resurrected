@@ -17,4 +17,7 @@ vp
 *.la
 *.a
 
+# other
 build/*
+.gitignore
+AGENTS.md
