@@ -1510,30 +1510,24 @@ void Plot_Window::draw_data_points()
           indexVBOsinitialized = 0;
           indexVBOsfilled = 0;
           
-          // Fall through to client-side array rendering
-          blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,npoints-1));
+          // Fall back to client-side array rendering
+          // Make sure we only use valid indices (0 to count-1)
+          blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,count-1));
           unsigned int *indices = (unsigned int *)(tmpArray.data());
           
-          if (element_mode == GL_POINTS) {
-            glDrawArrays(element_mode, 0, count);
-          } else {
-            glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
-          }
+          // Always use glDrawElements to respect the indices array
+          // This ensures proper point selection and ordering
+          glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
         }
       } else {
         // Fallback to client-side arrays if VBOs aren't available or not fully initialized
-        blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,npoints-1));
+        // Make sure we only use valid indices (0 to count-1)
+        blitz::Array<unsigned int, 1> tmpArray = indices_selected(brush_index, blitz::Range(0,count-1));
         unsigned int *indices = (unsigned int *)(tmpArray.data());
         
-        // Use glDrawArrays if we can't use VBOs
-        if (element_mode == GL_POINTS) {
-          // For points, we can use glDrawArrays with the vertex array
-          glDrawArrays(element_mode, 0, count);
-        } else {
-          // For other modes (like line strips), we need to use glDrawElements
-          // with client-side indices
-          glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
-        }
+        // Always use glDrawElements to respect the indices array
+        // This ensures proper point selection and ordering
+        glDrawElements(element_mode, count, GL_UNSIGNED_INT, indices);
       }
     }
   }
