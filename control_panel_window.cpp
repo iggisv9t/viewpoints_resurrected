@@ -391,11 +391,11 @@ void Control_Panel_Window::make_widgets( Control_Panel_Window *cpw)
 
   // Dynamically build the variables (axes selection) menu(s).
   // cout << "starting axes menu build, nvars = " << nvars << endl;
-  for( int i=0; i<=nvars; i++) {
-    // cout << "label " << i 
-    //      << " = " << (column_info[i].label).c_str() << endl;
-    // varindex_menu_items[i].label((const char *) ((column_info[i].label).c_str()));
-    varindex_menu_items[i].label( (const char *) (pdfm->column_label(i)).c_str());
+  for (int i = 0; i <= nvars; i++) {
+    std::string label = pdfm->column_label(i);
+    // Set the label using the label() method with a strdup'ed string
+    // FLTK will make its own copy and handle the memory
+    varindex_menu_items[i].label(strdup(label.c_str()));
     varindex_menu_items[i].user_data(reinterpret_cast<void*>(static_cast<intptr_t>(i)));
   }
   varindex_menu_items[nvars+1].label(0);
